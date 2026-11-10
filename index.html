@@ -1,0 +1,53 @@
+<!doctype html>
+<html lang="es">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Desbloquear Claude</title>
+<script src="https://telegram.org/js/telegram-web-app.js"></script>
+<style>
+  :root { --fondo:#ffffff; --texto:#1c1c1e; --suave:#6e6e73; --acento:#2a7de1; }
+  @media (prefers-color-scheme: dark) { :root:not([data-theme="light"]) { --fondo:#1c1c1e; --texto:#f2f2f7; --suave:#a1a1a6; } }
+  :root[data-theme="dark"] { --fondo:#1c1c1e; --texto:#f2f2f7; --suave:#a1a1a6; }
+  body { margin:0; padding:40px 16px; background:var(--tg-theme-bg-color, var(--fondo)); color:var(--tg-theme-text-color, var(--texto));
+         font:17px/1.4 -apple-system, system-ui, sans-serif; text-align:center; }
+  .icono { font-size:64px; margin-bottom:12px; }
+  p { color:var(--tg-theme-hint-color, var(--suave)); }
+  button { margin-top:24px; padding:14px 28px; border:0; border-radius:12px; font-size:17px;
+           background:var(--tg-theme-button-color, var(--acento)); color:var(--tg-theme-button-text-color, #fff); }
+</style>
+</head>
+<body>
+<div class="icono">🧠</div>
+<h2 id="titulo">Claude La Cinta</h2>
+<p id="estado">Comprobando Face ID…</p>
+<button id="otra" hidden onclick="empezar()">Intentarlo otra vez</button>
+<script>
+// Página de la miniapp de Telegram (11/11/2026). Solo usa el Face ID del iPhone (BiometricManager de Telegram) y
+// devuelve el resultado al bot con sendData. No guarda ni contiene ninguna clave: el «token» lo guarda el propio
+// Telegram en el llavero del iPhone y solo lo entrega tras pasar Face ID.
+const tg = window.Telegram.WebApp, bm = tg.BiometricManager;
+const q = new URLSearchParams(location.search);
+const est = t => document.getElementById("estado").textContent = t;
+function enviar(o) { tg.sendData(JSON.stringify(o)); setTimeout(() => tg.close(), 300); }
+function empezar() {
+  document.getElementById("otra").hidden = true;
+  if (!bm.isBiometricAvailable) { est("Este dispositivo no tiene Face ID disponible en Telegram."); return enviar({err: "no_bio"}); }
+  if (q.get("m") === "alta") {
+    bm.requestAccess({reason: "Para desbloquear Claude La Cinta con tu cara"}, ok => {
+      if (!ok) { est("No has dado permiso de Face ID a Telegram."); return enviar({err: "sin_permiso"}); }
+      bm.updateBiometricToken(q.get("s") || "", guardado => enviar({alta: !!guardado}));
+    });
+  } else {
+    if (!bm.isBiometricTokenSaved) { est("Falta dar de alta el Face ID: escribe /alta_faceid al bot."); return enviar({err: "sin_alta"}); }
+    bm.authenticate({reason: "Desbloquear Claude La Cinta"}, (ok, token) => {
+      if (!ok) { est("Face ID no reconocido."); document.getElementById("otra").hidden = false; return; }
+      enviar({t: token || ""});
+    });
+  }
+}
+tg.ready(); tg.expand();
+bm.init(empezar);
+</script>
+</body>
+</html>
