@@ -13,41 +13,66 @@
          font:17px/1.4 -apple-system, system-ui, sans-serif; text-align:center; }
   .icono { font-size:64px; margin-bottom:12px; }
   p { color:var(--tg-theme-hint-color, var(--suave)); }
-  button { margin-top:24px; padding:14px 28px; border:0; border-radius:12px; font-size:17px;
+  button { display:block; width:100%; max-width:320px; margin:16px auto 0; padding:14px 20px; border:0; border-radius:12px; font-size:17px;
            background:var(--tg-theme-button-color, var(--acento)); color:var(--tg-theme-button-text-color, #fff); }
+  button[hidden] { display:none; }
 </style>
 </head>
 <body>
-<div class="icono">🧠</div>
-<h2 id="titulo">Claude La Cinta</h2>
+<div class="icono" id="icono">🧠</div>
+<h2>Claude La Cinta</h2>
 <p id="estado">Comprobando Face ID…</p>
-<button id="otra" hidden onclick="empezar()">Intentarlo otra vez</button>
+<button id="b_face" hidden onclick="usarFace()">Usar Face ID</button>
+<button id="b_ajustes" hidden onclick="bm.openSettings()">Abrir ajustes de Face ID</button>
 <script>
-// Página de la miniapp de Telegram (11/11/2026). Solo usa el Face ID del iPhone (BiometricManager de Telegram) y
-// devuelve el resultado al bot con sendData. No guarda ni contiene ninguna clave: el «token» lo guarda el propio
-// Telegram en el llavero del iPhone y solo lo entrega tras pasar Face ID.
+// Miniapp de Telegram (11/11/2026, v2). Solo usa el Face ID del iPhone (BiometricManager de Telegram) y devuelve el
+// resultado al bot con sendData. No contiene claves: el «token» lo guarda Telegram en el llavero del iPhone y solo
+// lo entrega tras pasar Face ID.  v2: si el permiso se denegó antes, botón «Abrir ajustes» (Telegram no vuelve a
+// preguntar solo); los errores se quedan en pantalla en vez de cerrar.
 const tg = window.Telegram.WebApp, bm = tg.BiometricManager;
 const q = new URLSearchParams(location.search);
+const alta = q.get("m") === "alta";
 const est = t => document.getElementById("estado").textContent = t;
-function enviar(o) { tg.sendData(JSON.stringify(o)); setTimeout(() => tg.close(), 300); }
-function empezar() {
-  document.getElementById("otra").hidden = true;
-  if (!bm.isBiometricAvailable) { est("Este dispositivo no tiene Face ID disponible en Telegram."); return enviar({err: "no_bio"}); }
-  if (q.get("m") === "alta") {
+const ver = (id, si) => document.getElementById(id).hidden = !si;
+function enviar(o) { tg.sendData(JSON.stringify(o)); setTimeout(() => tg.close(), 400); }
+
+function preparar() {
+  ver("b_face", false); ver("b_ajustes", false);
+  if (!bm.isInited) { est("Telegram no ha cargado el Face ID. Cierra y vuelve a abrir."); return; }
+  if (!bm.isBiometricAvailable) { est("Este dispositivo no tiene Face ID disponible en Telegram."); return; }
+  if (bm.isAccessRequested && !bm.isAccessGranted) {
+    est("Telegram tiene el Face ID desactivado para esta miniapp. Pulsa «Abrir ajustes», actívalo y vuelve aquí.");
+    ver("b_ajustes", true); ver("b_face", true); return;
+  }
+  if (!alta && !bm.isBiometricTokenSaved) { est("Falta dar de alta el Face ID: escribe /alta_faceid al bot."); return; }
+  est(alta ? "Pulsa para dar de alta tu Face ID." : "Pulsa para desbloquear.");
+  ver("b_face", true);
+}
+
+function usarFace() {
+  if (!bm.isAccessGranted) {
     bm.requestAccess({reason: "Para desbloquear Claude La Cinta con tu cara"}, ok => {
-      if (!ok) { est("No has dado permiso de Face ID a Telegram."); return enviar({err: "sin_permiso"}); }
-      bm.updateBiometricToken(q.get("s") || "", guardado => enviar({alta: !!guardado}));
+      if (ok) usarFace(); else preparar();
+    });
+    return;
+  }
+  if (alta) {
+    est("Guardando…");
+    bm.updateBiometricToken(q.get("s") || "", guardado => {
+      if (guardado) { est("✅ Face ID dado de alta."); enviar({alta: true}); }
+      else { est("No se pudo guardar. Inténtalo otra vez."); ver("b_face", true); }
     });
   } else {
-    if (!bm.isBiometricTokenSaved) { est("Falta dar de alta el Face ID: escribe /alta_faceid al bot."); return enviar({err: "sin_alta"}); }
     bm.authenticate({reason: "Desbloquear Claude La Cinta"}, (ok, token) => {
-      if (!ok) { est("Face ID no reconocido."); document.getElementById("otra").hidden = false; return; }
-      enviar({t: token || ""});
+      if (ok && token) { est("🔓 Desbloqueado."); enviar({t: token}); }
+      else { est("Face ID no reconocido. Inténtalo otra vez."); ver("b_face", true); }
     });
   }
 }
+
 tg.ready(); tg.expand();
-bm.init(empezar);
+bm.init(preparar);
+tg.onEvent("biometricManagerUpdated", preparar);
 </script>
 </body>
 </html>
